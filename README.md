@@ -24,7 +24,7 @@ chmod +x setup.sh
 
 ## 3. Insert API Keys (Crucial Step):
 
-Follow the detailed instructions in the SETUP_GUIDE.md to generate your personal 42 Intra and Google Calendar API keys. 
+Follow the detailed instructions in the [SETUP_GUIDE](SETUP_GUIDE.md) to generate your personal 42 Intra and Google Calendar API keys. 
 
 You must open the .env file and replace the placeholders.
 
