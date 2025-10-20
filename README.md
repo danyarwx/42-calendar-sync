@@ -1,38 +1,42 @@
-## 📅 42 Calendar Sync Tool (Local Service)
+# 📅 42 Calendar Sync Tool (Local Service)
 
 This application is a local Node.js service designed to synchronize your future event registrations from the 42 Intra API to your Google Calendar.
 
-## 🚀 Quick Start Guide
+# 🚀 Quick Start Guide
 
 Prerequisite: You must have Node.js and Git installed on your Linux machine.
 
-# 1. Clone the repository:
+## 1. Clone the repository:
 
 git clone [YOUR_REPO_URL]
+
 cd [YOUR_REPO_NAME]
 
 
-# 2. Run the setup script:
+## 2. Run the setup script:
 
 chmod +x setup.sh
+
 ./setup.sh
 
 -> This installs dependencies and creates the necessary .env file.
 
 
-# 3. Insert API Keys (Crucial Step):
+## 3. Insert API Keys (Crucial Step):
 
-Follow the detailed instructions in the SETUP_GUIDE.md to generate your personal 42 Intra and Google Calendar API keys. You must open the .env file and replace the placeholders.
+Follow the detailed instructions in the SETUP_GUIDE.md to generate your personal 42 Intra and Google Calendar API keys. 
+
+You must open the .env file and replace the placeholders.
 
 
-# 4. Start the Service:
+## 4. Start the Service:
 
 node server.js
 
 -> Open the displayed URL in your browser to begin the synchronization process.
 
 
-## ⚙️ Core Features (Minimalist View)
+# ⚙️ Core Features (Minimalist View)
 
 -> This tool provides a complete and stable synchronization experience by focusing on these key aspects:
 
