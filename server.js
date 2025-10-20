@@ -27,41 +27,30 @@ const oauth2Client = new google.auth.OAuth2(
 const app = express();
 const PORT = 3000;
 
-// --- NEW HELPER FUNCTION FOR DUPLICATE CHECK ---
+// --- HELPER FUNCTION FOR DUPLICATE CHECK ---
 
 /**
  * Checks if a 42 event already exists in Google Calendar based on the 42 event ID.
- * @param {object} calendar - The Google Calendar API client instance.
- * @param {string} eventId42 - The numerical ID of the 42 event.
- * @returns {Promise<boolean>} True if the event exists, false otherwise.
+ * The 42 event ID is stored in the Google Calendar event's source URL field.
  */
 async function eventExists(calendar, eventId42) {
-    // The 42 event ID is stored in the source URL field: https://projects.intra.42.fr/events/ID
     const urlFilter = `https://projects.intra.42.fr/events/${eventId42}`;
-
     try {
         const response = await calendar.events.list({
             calendarId: 'primary',
-            // Search criteria: Look for a matching URL in the source field
             q: urlFilter, 
-            // We only need 1 result max
             maxResults: 1, 
-            // Only list events that haven't been deleted
             showDeleted: false, 
         });
-
-        // If items are returned, the event exists.
         return response.data.items && response.data.items.length > 0;
-
     } catch (error) {
         console.error('Error checking for existing event:', error.message);
-        // Assume event does not exist if API call fails (safer than stopping the sync)
         return false; 
     }
 }
 
 // -----------------------------------------------------------
-// --- 42 INTRA AUTH FLOW (UNCHANGED) ---
+// --- 42 INTRA AUTH FLOW ---
 // -----------------------------------------------------------
 
 // Starting point: Redirect the User to 42-signin
@@ -69,7 +58,6 @@ app.get('/login/42', (req, res) => {
     // Determine auto_sync status
     const autoSyncFlag = req.query.auto_sync === 'true' ? 'true' : 'false';
     const authUrl = `https://api.intra.42.fr/oauth/authorize?client_id=${UID_42}&redirect_uri=${INTRA_REDIRECT_URI}&response_type=code&state=${autoSyncFlag}`;
-    
     res.redirect(authUrl);
 });
 
@@ -93,13 +81,11 @@ app.get('/callback', async (req, res) => {
         });
 
         const accessToken42 = response.data.access_token;
-        
-        // 2. Combine 42 token and auto_sync flag into one state string for Google
         const stateData = `${accessToken42}|${autoSyncFlag}`;
 
-        // 3. Initiate Google OAuth Flow, passing the combined state
+        // 2. Initiate Google OAuth Flow, passing the combined state
         const googleAuthUrl = oauth2Client.generateAuthUrl({
-            access_type: 'offline', 
+            access_type: 'offline', // Request a refresh token for long-term sync
             scope: GOOGLE_SCOPES,
             state: stateData
         });
@@ -119,8 +105,6 @@ app.get('/callback', async (req, res) => {
 
 app.get('/callback/google', async (req, res) => {
     const googleCode = req.query.code;
-    
-    // Split the combined state parameter
     const stateParts = req.query.state ? req.query.state.split('|') : [];
     const accessToken42 = stateParts[0];
     const autoSync = stateParts.length > 1 ? stateParts[1] === 'true' : false; 
@@ -135,8 +119,6 @@ app.get('/callback/google', async (req, res) => {
         oauth2Client.setCredentials(tokens);
         const googleAccessToken = tokens.access_token;
         
-        // --- 2. Fetch 42 Events ---
-        
         const intraApi = axios.create({
             baseURL: 'https://api.intra.42.fr/v2',
             headers: { Authorization: `Bearer ${accessToken42}` }
@@ -145,27 +127,58 @@ app.get('/callback/google', async (req, res) => {
         const userResponse = await intraApi.get('/me');
         const userId = userResponse.data.id;
         
-        const events42Response = await intraApi.get(`/users/${userId}/events_users`, {
-            params: {
-                'page[size]': 100,
-            }
-        });
-        const events42 = events42Response.data;
+        let allEvents42 = [];
+        let page = 1;
+        let hasMorePages = true;
+        
+        // Setup Date Range: Start 2 years ago, End 10 years in the future (avoids 'open range' error)
+        const relevantStart = new Date();
+        relevantStart.setFullYear(relevantStart.getFullYear() - 2); 
+        const relevantEnd = new Date();
+        relevantEnd.setFullYear(relevantEnd.getFullYear() + 10); 
+        
+        // Format: YYYY-MM-DD,YYYY-MM-DD
+        const relevantDateRangeString = `${relevantStart.toISOString().split('T')[0]},${relevantEnd.toISOString().split('T')[0]}`;
 
-        // --- 3. Process and Convert Events for Google Calendar ---
+        // 2. Fetch user-specific event registrations (Paginated)
+        while (hasMorePages && page < 20) { 
+            
+            const events42Response = await intraApi.get(`/users/${userId}/events_users`, {
+                params: {
+                    'page[size]': 100, 
+                    'page[number]': page,
+                    // FIX: Use the allowed 'created_at' filter to fetch a broad range of registrations
+                    'range[created_at]': relevantDateRangeString 
+                }
+            });
+            
+            const currentPageEvents = events42Response.data;
+            allEvents42 = allEvents42.concat(currentPageEvents);
+
+            // Break if the last page was not full
+            if (currentPageEvents.length < 100) {
+                 hasMorePages = false; 
+            }
+            page++;
+        }
+        
+        // Extract the actual event objects and filter out nulls
+        let events42 = allEvents42.map(eventUser => eventUser.event).filter(e => e !== null);
+        
+        console.log(`Successfully fetched ${events42.length} user-specific events.`);
+        
+        // --- 3. Process and Convert Events for Google Calendar (FUTURE EVENTS ONLY) ---
         
         const now = new Date(); 
 
         const calendarEvents = events42
-            .filter(eventUser => eventUser.event) 
-            // Client-Side Filtering: Keep only events where BEGIN_AT is in the future
-            .filter(eventUser => {
-                const eventDate = new Date(eventUser.event.begin_at);
+            .filter(event42 => {
+                const eventDate = new Date(event42.begin_at);
+                
+                // Keep ONLY future events. Past events are ignored.
                 return eventDate > now;
             })
-            .map(eventUser => {
-                const event42 = eventUser.event; 
-                
+            .map(event42 => {
                 const durationHours = event42.duration ? event42.duration / 3600 : 'N/A';
                 
                 const description = `Duration: ${durationHours} hours.\nLocation: ${event42.location || 'N/A'}\n\n${event42.description || ''}`;
@@ -179,7 +192,7 @@ app.get('/callback/google', async (req, res) => {
                         timeZone: 'UTC', 
                     },
                     end: {
-                        dateTime: event42.end_at, 
+                        dateTime: event44.end_at, 
                         timeZone: 'UTC',
                     },
                     reminders: { useDefault: true },
@@ -196,16 +209,15 @@ app.get('/callback/google', async (req, res) => {
             // AUTOMATIC MODE: Insert all events immediately with Duplicate Check
             const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
             let createdCount = 0;
-            let skippedCount = 0; // NEW: Counter for skipped duplicates
+            let skippedCount = 0; 
 
             for (const event of calendarEvents) {
                 const eventId42 = event.source.url.split('/').pop();
                 
-                // NEW: CHECK FOR DUPLICATES
                 if (await eventExists(calendar, eventId42)) {
                     console.log(`Skipping duplicate event: ${event.summary}`);
                     skippedCount++;
-                    continue; // Skip insertion
+                    continue; 
                 }
 
                 try {
@@ -222,7 +234,7 @@ app.get('/callback/google', async (req, res) => {
             res.send(`Success! ${createdCount} 42 events have been synced automatically to your Google Calendar. (${skippedCount} duplicates skipped)`);
         
         } else {
-            // INTERACTIVE MODE (UNCHANGED)
+            // INTERACTIVE MODE
             
             if (calendarEvents.length === 0) {
                  return res.send('No future 42 events found that require syncing.');
@@ -258,9 +270,10 @@ app.get('/callback/google', async (req, res) => {
     }
 });
 
-// New Endpoint Simulation: Handles single event synchronization
+// --- SINGLE SYNC ENDPOINT (UNCHANGED) ---
+
 app.get('/sync/single', async (req, res) => {
-    // This uses the passed Access Token (valid for ~1 hour) to authorize Google
+    // This endpoint handles the manual, single event sync from the interactive list.
     const accessToken42 = req.query.token;
     const eventId = req.query.event_id;
     const googleAccessToken = req.query.google_access_token; 
@@ -272,9 +285,9 @@ app.get('/sync/single', async (req, res) => {
     try {
         // Authorize Google client using the Access Token
         oauth2Client.setCredentials({ access_token: googleAccessToken });
-        const calendar = google.calendar({ version: 'v3', auth: oauth2Client }); // Initialize calendar client
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client }); 
 
-        // NEW: CHECK FOR DUPLICATES
+        // CHECK FOR DUPLICATES
         if (await eventExists(calendar, eventId)) {
             return res.send(`Event ID ${eventId} is already synced to your calendar. (Duplicate skipped)`);
         }
@@ -285,7 +298,6 @@ app.get('/sync/single', async (req, res) => {
             headers: { Authorization: `Bearer ${accessToken42}` }
         });
 
-        // Fetch the event directly by ID
         const event42Response = await intraApi.get(`/events/${eventId}`);
         const event42 = event42Response.data;
 
