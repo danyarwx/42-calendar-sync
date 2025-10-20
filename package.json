@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "axios": "^1.12.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  },
+  "name": "42hn_v2",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrispyhl/hackathon_42hn.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/chrispyhl/hackathon_42hn/issues"
+  },
+  "homepage": "https://github.com/chrispyhl/hackathon_42hn#readme",
+  "description": ""
+}
