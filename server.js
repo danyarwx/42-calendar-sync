@@ -8,14 +8,12 @@ dotenv.config();
 // 42 Intra Credentials
 const UID_42 = process.env.UID_42;
 const SECRET_42 = process.env.SECRET_42;
-// Uses the URI from your .env, which is also registered in the 42 Intra app
-const INTRA_REDIRECT_URI = process.env.REDIRECT_URI; // http://localhost:3000/callback
+const INTRA_REDIRECT_URI = process.env.REDIRECT_URI; // Your registered 42 callback
 const INTRA_TOKEN_URL = 'https://api.intra.42.fr/oauth/token';
 
 // Google Calendar Credentials
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-// Must be a DISTINCT URI for the Google OAuth process
 const GOOGLE_REDIRECT_URI = 'http://localhost:3000/callback/google'; 
 const GOOGLE_SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
@@ -29,7 +27,9 @@ const oauth2Client = new google.auth.OAuth2(
 const app = express();
 const PORT = 3000;
 
+// -----------------------------------------------------------
 // --- 42 INTRA AUTH FLOW ---
+// -----------------------------------------------------------
 
 // Starting point: Redirect the User to 42-signin
 app.get('/login/42', (req, res) => {
@@ -37,7 +37,7 @@ app.get('/login/42', (req, res) => {
     res.redirect(authUrl);
 });
 
-// CORRECTED Callback-Endpoint: Must match the registered path '/callback'
+// Callback-Endpoint: Receives the 42-Authorization Code
 app.get('/callback', async (req, res) => {
     const code = req.query.code;
 
@@ -57,49 +57,113 @@ app.get('/callback', async (req, res) => {
 
         const accessToken42 = response.data.access_token;
         
-        // --- STEP 2: Initiate Google OAuth Flow ---
-        
+        // 2. Initiate Google OAuth Flow, passing the 42 token via the 'state' parameter
         const googleAuthUrl = oauth2Client.generateAuthUrl({
             access_type: 'offline', 
             scope: GOOGLE_SCOPES,
-            state: accessToken42 // Pass the 42 token to the Google callback
+            state: accessToken42
         });
 
         res.redirect(googleAuthUrl);
 
     } catch (error) {
-        // Corrected Error Handling for older Node versions
         const errorData = error.response ? error.response.data : error.message;
         console.error('Error during 42 token exchange:', errorData);
         res.status(500).send('Error during 42 authorization.');
     }
 });
 
+// -----------------------------------------------------------
+// --- GOOGLE CALENDAR AUTH & SYNC FLOW ---
+// -----------------------------------------------------------
 
-// --- GOOGLE CALENDAR AUTH FLOW ---
-
-// New Callback-Endpoint: Receives the Google Authorization Code (Path must be registered with Google)
 app.get('/callback/google', async (req, res) => {
     const googleCode = req.query.code;
-    const accessToken42 = req.query.state; // Retrieve the 42 token from the 'state' parameter
+    const accessToken42 = req.query.state; // The 42 token passed from the previous step
 
-    if (!googleCode) {
-        return res.status(400).send('Google Authorization code missing.');
-    }
-    
-    if (!accessToken42) {
-        return res.status(400).send('42 Access Token (state) missing.');
+    if (!googleCode || !accessToken42) {
+        return res.status(400).send('Missing authorization data.');
     }
 
     try {
         // 1. Exchange the Google Code for Access and Refresh Tokens
         const { tokens } = await oauth2Client.getToken(googleCode);
         oauth2Client.setCredentials(tokens);
-
-        // 2. Fetch 42 Events (Logic goes here)
-        // 3. Create Google Calendar Events (Logic goes here)
         
-        res.send(`Success! 42 events fetched and pushed to Google Calendar.`);
+        // --- 2. Fetch 42 Events (Requires User ID) ---
+        
+        const intraApi = axios.create({
+            baseURL: 'https://api.intra.42.fr/v2',
+            headers: { Authorization: `Bearer ${accessToken42}` }
+        });
+
+        // 2a. Fetch user ID first to build the correct event URL
+        const userResponse = await intraApi.get('/me');
+        const userId = userResponse.data.id;
+        
+        // 2b. Use the User ID to fetch user-specific event registrations (events_users)
+        const events42Response = await intraApi.get(`/users/${userId}/events_users`, {
+            params: {
+                filter: { future: true } // Only fetch upcoming events
+            }
+        });
+        const events42 = events42Response.data;
+
+        // --- 3. Process and Convert Events for Google Calendar ---
+        
+        const calendarEvents = events42
+            // Filter: Only include entries that contain an actual 'event' object
+            .filter(eventUser => eventUser.event)
+            // Map: Extract the nested 'event' object for processing
+            .map(eventUser => {
+                const event42 = eventUser.event; 
+                
+                // Calculate duration in hours
+                const durationHours = event42.duration ? event42.duration / 3600 : 'N/A';
+                
+                const description = `Duration: ${durationHours} hours.\nLocation: ${event42.location || 'N/A'}\n\n${event42.description || ''}`;
+
+                return {
+                    summary: `42: ${event42.name}`,
+                    location: event42.location || 'N/A',
+                    description: description,
+                    start: {
+                        dateTime: event42.begin_at, // ISO 8601 format from 42
+                        timeZone: 'Europe/Berlin', 
+                    },
+                    end: {
+                        dateTime: event42.end_at,
+                        timeZone: 'Europe/Berlin',
+                    },
+                    reminders: { useDefault: true },
+                    source: {
+                        title: '42 Intra',
+                        url: `https://projects.intra.42.fr/events/${event42.id}`,
+                    }
+                };
+            });
+
+        // --- 4. Insert Events into Google Calendar ---
+        
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+        let createdCount = 0;
+
+        for (const event of calendarEvents) {
+            try {
+                await calendar.events.insert({
+                    calendarId: 'primary', // Use the primary calendar of the authenticated user
+                    resource: event,
+                });
+                createdCount++;
+            } catch (insertError) {
+                // Log and ignore specific insertion errors (e.g., event already exists)
+                console.warn(`Event creation failed for ${event.summary}:`, insertError.message);
+            }
+        }
+        
+        // --- 5. Success Message ---
+        
+        res.send(`Success! ${createdCount} 42 events have been synced to your Google Calendar.`);
 
     } catch (error) {
         const errorData = error.response ? error.response.data : error.message;
