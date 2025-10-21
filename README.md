@@ -1,58 +1,98 @@
-# 📅 42 Calendar Sync Tool (Local Service)
+# 📅 Mallet Calendar Sync  
+>**Never Miss a 42 Event Ever Again**
 
-This application is a local Node.js service designed to synchronize your future event registrations from the 42 Intra API to your Google Calendar.
+A lightweight integration that automatically syncs your **42 Intra events** with **Google Calendar**, so you never have to manually copy event times again.  
+Built for the 42 Heilbronn community — by students, for students.
 
-# 🚀 Quick Start Guide
+---
 
-Prerequisite: You must have Node.js and Git installed on your Linux machine.
+## 🚀 Overview
 
-## 1. Clone the repository:
+Students at 42 manage dozens of events each week — rushes, exams, workshops, and evaluations — all listed on the Intra platform.  
+This tool connects **42 Intra** with **Google Calendar**, allowing one-click subscription and real-time synchronization of events.  
 
-git clone [YOUR_REPO_URL]
+It starts as a **browser extension + Node.js backend** MVP and can evolve into a full-fledged web app.
 
-cd [YOUR_REPO_NAME]
+---
 
+## 🧠 Core Features
 
-## 2. Run the setup script:
+✅ **Google Calendar Integration**  
+- Secure login via Google OAuth 2.0  
+- Automatic event creation, updates, and deletion in your Google Calendar  
 
+🖱️ **Subscribe / Unsubscribe from 42 Intra**  
+- Adds a “Subscribe” button next to each 42 event (via the browser extension)  
+- Subscribed events appear instantly in Google Calendar  
+- Unsubscribed events are removed automatically  
+
+🔄 **Real-Time Sync**  
+- Keeps your calendar up to date as events are added or changed  
+- Maintains a small local mapping database to avoid duplicates  
+
+🧩 **Simple & Secure**  
+- Tokens are safely managed server-side  
+- HTTPS, cookies, and encrypted sessions ensure data privacy  
+
+🌍 **Future-Ready (Post-Hackathon)**  
+- Two-way synchronization (Google → 42)  
+- Batch sync (“Add all Piscine rushes”)  
+- Custom reminders & calendar selection  
+
+---
+
+## 🛠️ Tech Stack
+
+**Frontend / Extension**  
+- JavaScript / TypeScript  
+- HTML + CSS (MV3 Chrome Extension)  
+
+**Backend**  
+- Node.js (Express)  
+- Google OAuth & Calendar API  
+- 42 API Integration  
+- SQLite or Redis (for event mapping)  
+
+---
+
+## ⚡ Quick Start (Local Setup)
+
+> Prerequisites: [Node.js](https://nodejs.org/) and [Git](https://git-scm.com/) installed.
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/<YOUR_USERNAME>/<REPO_NAME>.git
+cd <REPO_NAME>
+```
+
+### 2. Run setup
+```bash
 chmod +x setup.sh
-
 ./setup.sh
+```
 
--> This installs dependencies and creates the necessary .env file.
+This installs dependencies and creates a default .env file.
 
+### 3. Configure your credentials
 
-## 3. Insert API Keys (Crucial Step):
+Follow the step-by-step instructions in SETUP_GUIDE.md
+ to generate:
 
-Follow the detailed instructions in the [SETUP_GUIDE](SETUP_GUIDE.md) to generate your personal 42 Intra and Google Calendar API keys. 
+- 42 Intra API credentials: FT_CLIENT_ID, FT_CLIENT_SECRET
 
-You must open the .env file and replace the placeholders.
+- Google Calendar credentials: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 
+- Then, update your .env file with the generated keys.
 
-## 4. Start the Service:
-
+### 4. Start the service
+```bash
 node server.js
-
--> Open the displayed URL in your browser to begin the synchronization process.
-
-
-# ⚙️ Core Features (Minimalist View)
-
--> This tool provides a complete and stable synchronization experience by focusing on these key aspects:
+```
 
 
-✅ Targeted Events
+Once running, open the displayed URL in your browser and connect both 42 and Google accounts.
 
-Synchronizes only events you are registered for (fetched via the events_users endpoint).
+📜 License
 
-➡️ Future-Proof
-
-Only events with a start date in the future are synchronized to keep your calendar clean.
-
-🔄 Dual Sync Mode
-
-You choose: Fully Automatic (all future events at once with duplicate checking) or Manual (web-based selection).
-
-🛡️ Data Integrity
-
-The system uses duplicate checking and solves API issues (like pagination and the missing date filter) to ensure a complete sync.
+This project is open-source and available under the MIT License.
+Contributions, forks, and pull requests are welcome!
