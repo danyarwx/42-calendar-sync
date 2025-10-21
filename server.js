@@ -50,7 +50,7 @@ async function eventExists(calendar, eventId42) {
 }
 
 // -----------------------------------------------------------
-// --- 42 INTRA AUTH FLOW ---
+// --- 42 INTRA AUTH FLOW (UNCHANGED) ---
 // -----------------------------------------------------------
 
 // Starting point: Redirect the User to 42-signin
@@ -105,20 +105,46 @@ app.get('/callback', async (req, res) => {
 
 app.get('/callback/google', async (req, res) => {
     const googleCode = req.query.code;
-    const stateParts = req.query.state ? req.query.state.split('|') : [];
-    const accessToken42 = stateParts[0];
-    const autoSync = stateParts.length > 1 ? stateParts[1] === 'true' : false; 
+    
+    // --- LOGIC FOR TOKEN RETRIEVAL (Handles return flow) ---
+    let accessToken42, googleAccessToken;
+    let autoSync = false;
+    let tokens;
 
-    if (!googleCode || !accessToken42) {
-        return res.status(400).send('Missing authorization data (Google Code or 42 Token).');
+    if (req.query.token_42 && req.query.token_google) {
+        // Case 1: Return trip from single sync (tokens are already known)
+        accessToken42 = req.query.token_42;
+        googleAccessToken = req.query.token_google;
+        autoSync = req.query.auto_sync === 'true'; 
+        oauth2Client.setCredentials({ access_token: googleAccessToken });
+
+    } else if (googleCode) {
+        // Case 2: Initial trip after Google OAuth (standard flow)
+        const stateParts = req.query.state ? req.query.state.split('|') : [];
+        accessToken42 = stateParts[0];
+        autoSync = stateParts.length > 1 ? stateParts[1] === 'true' : false; 
+
+        if (!accessToken42) {
+            return res.status(400).send('Missing 42 Token in state data.');
+        }
+
+        try {
+            // Exchange the Google Code for Access and Refresh Tokens
+            tokens = await oauth2Client.getToken(googleCode);
+            oauth2Client.setCredentials(tokens.tokens);
+            googleAccessToken = tokens.tokens.access_token;
+        } catch (error) {
+             const errorData = error.response ? error.response.data : error.message;
+             console.error('Error during Google token exchange:', errorData);
+             return res.status(500).send('Error during Google token exchange.');
+        }
+    } else {
+        // No code and no tokens
+        return res.status(400).send('Missing authorization data (Google Code or Access Tokens).');
     }
+    // --- END LOGIC FOR TOKEN RETRIEVAL ---
 
     try {
-        // 1. Exchange the Google Code for Access and Refresh Tokens
-        const { tokens } = await oauth2Client.getToken(googleCode);
-        oauth2Client.setCredentials(tokens);
-        const googleAccessToken = tokens.access_token;
-        
         const intraApi = axios.create({
             baseURL: 'https://api.intra.42.fr/v2',
             headers: { Authorization: `Bearer ${accessToken42}` }
@@ -147,7 +173,7 @@ app.get('/callback/google', async (req, res) => {
                 params: {
                     'page[size]': 100, 
                     'page[number]': page,
-                    // FIX: Use the allowed 'created_at' filter to fetch a broad range of registrations
+                    // Use the allowed 'created_at' filter to fetch a broad range of registrations
                     'range[created_at]': relevantDateRangeString 
                 }
             });
@@ -287,7 +313,7 @@ app.get('/callback/google', async (req, res) => {
                 <li style="border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-weight: 600;">${event.summary}</span>
                     <span>${date} at ${time}h (UTC)</span>
-                    <a href="/sync/single?token=${accessToken42}&event_id=${eventId}&google_access_token=${googleAccessToken}" 
+                    <a href="/sync/single?token_42=${accessToken42}&event_id=${eventId}&token_google=${googleAccessToken}&auto_sync=false" 
                        style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none;"> 
                        + Add to Google Calendar 
                     </a>
@@ -372,13 +398,14 @@ app.get('/callback/google', async (req, res) => {
     }
 });
 
-// --- SINGLE SYNC ENDPOINT (IMPROVED GUI) ---
+// --- SINGLE SYNC ENDPOINT (REVERTED TO WARNING ON DUPLICATE) ---
 
 app.get('/sync/single', async (req, res) => {
-    // This endpoint handles the manual, single event sync from the interactive list.
-    const accessToken42 = req.query.token;
+    // Note: Parameter names were changed to avoid conflict with the original flow
+    const accessToken42 = req.query.token_42;
     const eventId = req.query.event_id;
-    const googleAccessToken = req.query.google_access_token; 
+    const googleAccessToken = req.query.token_google; 
+    const autoSync = req.query.auto_sync || 'false';
 
     if (!accessToken42 || !eventId || !googleAccessToken) {
         return res.status(400).send('Missing required parameters for single sync.');
@@ -396,7 +423,12 @@ app.get('/sync/single', async (req, res) => {
             <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center; background-color: #fffbe6; border: 1px solid #ffe0b2;">
                 <h1>⚠️ Event Already Synced</h1>
                 <p>Event ID <strong>${eventId}</strong> has already been transferred to your Google Calendar.</p>
-                <p>You can close this window.</p>
+                <p style="margin-top: 20px;">
+                    <a href="/callback/google?token_42=${accessToken42}&token_google=${googleAccessToken}&auto_sync=${autoSync}" 
+                       style="color: #ff9800; font-weight: bold; text-decoration: none;">
+                        ← Back to Event Selection
+                    </a>
+                </p>
             </div>`);
         }
 
@@ -438,12 +470,17 @@ app.get('/sync/single', async (req, res) => {
             resource: calendarEvent,
         });
 
-        // --- IMPROVED GUI FOR SINGLE SYNC SUCCESS ---
+        // --- IMPROVED GUI FOR SINGLE SYNC SUCCESS WITH BACK LINK ---
         res.send(`
         <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center; background-color: #e6ffed; border: 1px solid #3c763d;">
             <h1>✅ Event Added Successfully</h1>
             <p><strong>"${calendarEvent.summary}"</strong> has been successfully synced to your Google Calendar.</p>
-            <p>You can close this window.</p>
+            <p style="margin-top: 20px; font-size: 1.1em;">
+                <a href="/callback/google?token_42=${accessToken42}&token_google=${googleAccessToken}&auto_sync=${autoSync}" 
+                   style="color: #3c763d; font-weight: bold; text-decoration: none;">
+                    ← Back to Event Selection
+                </a>
+            </p>
         </div>`);
 
     } catch (error) {
