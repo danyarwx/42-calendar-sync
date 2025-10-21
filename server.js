@@ -179,7 +179,7 @@ app.get('/callback/google', async (req, res) => {
                 return eventDate > now;
             })
             .map(event42 => {
-                const durationHours = event42.duration ? event42.duration / 3600 : 'N/A';
+                const durationHours = event42.duration ? (event42.duration / 3600).toFixed(1) : 'N/A';
                 
                 const description = `Duration: ${durationHours} hours.\nLocation: ${event42.location || 'N/A'}\n\n${event42.description || ''}`;
 
@@ -231,46 +231,148 @@ app.get('/callback/google', async (req, res) => {
                 }
             }
             
-            res.send(`Success! ${createdCount} 42 events have been synced automatically to your Google Calendar. (${skippedCount} duplicates skipped)`);
+            // --- IMPROVED GUI FOR AUTOMATIC MODE SUCCESS ---
+            const successHtml = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Sync Success</title>
+                <style>
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; text-align: center; }
+                    .container { background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 600px; margin: 50px auto; }
+                    h1 { color: #1a73e8; font-size: 24px; margin-bottom: 20px; }
+                    .status { font-size: 18px; margin-bottom: 25px; padding: 10px; border-radius: 6px; }
+                    .success { background-color: #e6ffed; border: 1px solid #3c763d; color: #3c763d; }
+                    .summary { list-style: none; padding: 0; margin-top: 20px; text-align: left; display: inline-block; }
+                    .summary li { margin-bottom: 10px; padding: 5px 0; border-bottom: 1px solid #eee; }
+                    a { color: #1a73e8; text-decoration: none; font-weight: 600; }
+                    a:hover { text-decoration: underline; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>✅ Synchronization Complete</h1>
+                    <div class="status success">
+                        All future 42 events have been processed successfully.
+                    </div>
+                    <ul class="summary">
+                        <li><strong>Successfully Created:</strong> ${createdCount} Events</li>
+                        <li><strong>Skipped (Duplicates):</strong> ${skippedCount} Events</li>
+                    </ul>
+                    <p style="margin-top: 30px;">You can now close this window.</p>
+                </div>
+            </body>
+            </html>`;
+            
+            res.send(successHtml);
         
         } else {
             // INTERACTIVE MODE
             
             if (calendarEvents.length === 0) {
-                 return res.send('No future 42 events found that require syncing.');
+                 return res.send(`
+                    <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center;">
+                        <h1>No Events Found</h1>
+                        <p>No future 42 events were found that require synchronization.</p>
+                    </div>`);
             }
             
             const eventListHtml = calendarEvents.map(event => {
                 const eventId = event.source.url.split('/').pop(); 
+                const date = event.start.dateTime.split('T')[0];
+                const time = event.start.dateTime.split('T')[1].substring(0, 5);
                 return `
-                <li>
-                    ${event.summary} (${event.start.dateTime.split('T')[0]} at ${event.start.dateTime.split('T')[1].substring(0, 5)}h)
-                    <a href="/sync/single?token=${accessToken42}&event_id=${eventId}&google_access_token=${googleAccessToken}"> [Add to Google Calendar] </a>
+                <li style="border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 600;">${event.summary}</span>
+                    <span>${date} at ${time}h (UTC)</span>
+                    <a href="/sync/single?token=${accessToken42}&event_id=${eventId}&google_access_token=${googleAccessToken}" 
+                       style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none;"> 
+                       + Add to Google Calendar 
+                    </a>
                 </li>`
             }).join('');
             
-            res.send(`
-                <h1>Confirm Events to Sync</h1>
-                <p>You are about to sync ${calendarEvents.length} future 42 events:</p>
-                <ul>${eventListHtml}</ul>
-                <hr>
-                <p>To fully sync all these events at once, click here: 
-                <a href="/login/42?auto_sync=true">Sync all events now</a></p>
-                
-                <h3>Future: Automatic Sync</h3>
-                <p>To enable permanent automatic sync (the "Haken"), you would start the process via this link:
-                <a href="/login/42?auto_sync=true">http://localhost:3000/login/42?auto_sync=true</a></p>
-            `);
+            const interactiveHtml = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Events to Sync</title>
+                <style>
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
+                    .container { background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 800px; margin: 30px auto; }
+                    h1 { color: #1a73e8; font-size: 24px; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+                    h2 { font-size: 18px; color: #555; margin-top: 30px; }
+                    ul { list-style: none; padding: 0; }
+                    a { color: #1a73e8; text-decoration: none; }
+                    a:hover { text-decoration: underline; }
+                    .sync-all-btn { display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #007bff; color: white; border-radius: 5px; text-decoration: none; font-weight: bold; }
+                    .sync-all-btn:hover { background-color: #0056b3; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🗓️ ${calendarEvents.length} Future 42 Events Found</h1>
+                    <p>Select the events you want to add individually, or sync them all at once:</p>
+                    
+                    <h2>Events for Selection:</h2>
+                    <ul>${eventListHtml}</ul>
+                    
+                    <hr style="margin: 30px 0;">
+                    
+                    <a href="/login/42?auto_sync=true" class="sync-all-btn">
+                        🚀 SYNC ALL EVENTS NOW (Automatic)
+                    </a>
+                    
+                    <h2 style="margin-top: 40px;">Extension Note (Auto-Sync Hook):</h2>
+                    <p>To enable permanent automatic synchronization in the extension (the "hook"), start the process via this link and allow 'Refresh Token' access:</p>
+                    <p><a href="/login/42?auto_sync=true">http://localhost:3000/login/42?auto_sync=true</a></p>
+                </div>
+            </body>
+            </html>`;
+            
+            res.send(interactiveHtml);
         }
 
     } catch (error) {
         const errorData = error.response ? error.response.data : error.message;
         console.error('Error during Google token exchange or event sync:', errorData);
-        res.status(500).send('Error during Google authorization or calendar sync.');
+        
+        // --- IMPROVED GUI FOR ERROR ---
+        const errorHtml = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Sync Error</title>
+            <style>
+                body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f8f8f8; color: #333; margin: 0; padding: 20px; text-align: center; }
+                .container { background: #fff3f3; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 600px; margin: 50px auto; border: 1px solid #d9534f; }
+                h1 { color: #d9534f; font-size: 24px; margin-bottom: 20px; }
+                p { font-size: 16px; margin-bottom: 15px; }
+                pre { background: #f9e1e1; padding: 15px; border-radius: 6px; text-align: left; overflow-x: auto; color: #a94442; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>❌ Synchronization Error</h1>
+                <p>A critical error occurred during authorization or synchronization.</p>
+                <p><strong>Error Details (Server Console):</strong></p>
+                <pre>${JSON.stringify(errorData, null, 2)}</pre>
+                <p>Please check the Node.js server console for more technical details.</p>
+            </div>
+        </body>
+        </html>`;
+        
+        res.status(500).send(errorHtml);
     }
 });
 
-// --- SINGLE SYNC ENDPOINT (UNCHANGED) ---
+// --- SINGLE SYNC ENDPOINT (IMPROVED GUI) ---
 
 app.get('/sync/single', async (req, res) => {
     // This endpoint handles the manual, single event sync from the interactive list.
@@ -289,7 +391,13 @@ app.get('/sync/single', async (req, res) => {
 
         // CHECK FOR DUPLICATES
         if (await eventExists(calendar, eventId)) {
-            return res.send(`Event ID ${eventId} is already synced to your calendar. (Duplicate skipped)`);
+             // --- IMPROVED GUI FOR DUPLICATE ---
+            return res.send(`
+            <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center; background-color: #fffbe6; border: 1px solid #ffe0b2;">
+                <h1>⚠️ Event Already Synced</h1>
+                <p>Event ID <strong>${eventId}</strong> has already been transferred to your Google Calendar.</p>
+                <p>You can close this window.</p>
+            </div>`);
         }
 
         // Fetch the single event data from 42 API
@@ -302,7 +410,7 @@ app.get('/sync/single', async (req, res) => {
         const event42 = event42Response.data;
 
         // Convert the single event
-        const durationHours = event42.duration ? event42.duration / 3600 : 'N/A';
+        const durationHours = event42.duration ? (event42.duration / 3600).toFixed(1) : 'N/A';
         const description = `Duration: ${durationHours} hours.\nLocation: ${event42.location || 'N/A'}\n\n${event42.description || ''}`;
 
         const calendarEvent = {
@@ -330,11 +438,22 @@ app.get('/sync/single', async (req, res) => {
             resource: calendarEvent,
         });
 
-        res.send(`Success! Single event "${calendarEvent.summary}" has been synced to your Google Calendar.`);
+        // --- IMPROVED GUI FOR SINGLE SYNC SUCCESS ---
+        res.send(`
+        <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center; background-color: #e6ffed; border: 1px solid #3c763d;">
+            <h1>✅ Event Added Successfully</h1>
+            <p><strong>"${calendarEvent.summary}"</strong> has been successfully synced to your Google Calendar.</p>
+            <p>You can close this window.</p>
+        </div>`);
 
     } catch (error) {
         console.error('Error during single event sync:', error.message);
-        res.status(500).send(`Error syncing single event. Check console for details.`);
+        res.status(500).send(`
+        <div style="font-family: Arial, sans-serif; padding: 20px; text-align: center; background-color: #f2dede; border: 1px solid #ebccd1;">
+            <h1>❌ Sync Error</h1>
+            <p>An error occurred: ${error.message}</p>
+            <p>Please check the server console.</p>
+        </div>`);
     }
 });
 
