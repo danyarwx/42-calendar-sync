@@ -192,7 +192,7 @@ app.get('/callback/google', async (req, res) => {
                         timeZone: 'UTC', 
                     },
                     end: {
-                        dateTime: event44.end_at, 
+                        dateTime: event42.end_at, 
                         timeZone: 'UTC',
                     },
                     reminders: { useDefault: true },
