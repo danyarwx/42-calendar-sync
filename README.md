@@ -1,4 +1,4 @@
-# 📅 Mallet Calendar Sync  
+# 📅 Mallett Calendar Sync  
 >**Never Miss a 42 Event Ever Again**
 
 A lightweight integration that automatically syncs your **42 Intra events** with **Google Calendar**, so you never have to manually copy event times again.  
